@@ -9,44 +9,33 @@
     <atom:link href="http://zaynprocess.com/rss2.xml" rel="self" type="application/rss+xml"/>
     
     <description>从前追寻答案，现在相信过程</description>
-    <pubDate>Wed, 29 Mar 2023 16:02:05 GMT</pubDate>
+    <pubDate>Mon, 03 Apr 2023 15:56:54 GMT</pubDate>
     <generator>http://hexo.io/</generator>
     
     <item>
-      <title>test</title>
-      <link>http://zaynprocess.com/2023/03/29/test/</link>
-      <guid>http://zaynprocess.com/2023/03/29/test/</guid>
-      <pubDate>Wed, 29 Mar 2023 15:44:52 GMT</pubDate>
+      <title>学习markdown</title>
+      <link>http://zaynprocess.com/2023/04/03/%E5%AD%A6%E4%B9%A0markdown/</link>
+      <guid>http://zaynprocess.com/2023/04/03/%E5%AD%A6%E4%B9%A0markdown/</guid>
+      <pubDate>Mon, 03 Apr 2023 15:36:57 GMT</pubDate>
+      
+        
+        
+      <description>&lt;p&gt;&lt;em&gt;这里是文字&lt;/em&gt;&lt;br&gt;&lt;em&gt;这里是文字&lt;/em&gt;&lt;br&gt;&lt;strong&gt;这里是文字&lt;/strong&gt;&lt;br&gt;&lt;em&gt;&lt;strong&gt;这里是文字&lt;/strong&gt;&lt;/em&gt;&lt;br&gt;&lt;del&gt;这里是文字&lt;/del&gt;&lt;/p&gt;
+&lt;h1 id=&quot;一级标题&quot;&gt;&lt;a hr</description>
+        
       
       
       
-      
-      <category domain="http://zaynprocess.com/categories/DFS/">DFS</category>
-      
-      
-      <category domain="http://zaynprocess.com/tags/%E7%AE%97%E6%B3%95/">算法</category>
+      <content:encoded><![CDATA[<p><em>这里是文字</em><br><em>这里是文字</em><br><strong>这里是文字</strong><br><em><strong>这里是文字</strong></em><br><del>这里是文字</del></p><h1 id="一级标题"><a href="#一级标题" class="headerlink" title="一级标题"></a>一级标题</h1><h2 id="标题"><a href="#标题" class="headerlink" title="标题"></a>标题</h2><h3 id="标题-1"><a href="#标题-1" class="headerlink" title="标题"></a>标题</h3><h4 id="标题-2"><a href="#标题-2" class="headerlink" title="标题"></a>标题</h4><p><img src="/.com//%E5%AD%A6%E4%B9%A0markdown%5C1.jpg" alt="test"></p>]]></content:encoded>
       
       
-      <comments>http://zaynprocess.com/2023/03/29/test/#disqus_thread</comments>
-      
-    </item>
-    
-    <item>
-      <title>Hello World</title>
-      <link>http://zaynprocess.com/2023/03/29/hello-world%20-%20%E5%89%AF%E6%9C%AC/</link>
-      <guid>http://zaynprocess.com/2023/03/29/hello-world%20-%20%E5%89%AF%E6%9C%AC/</guid>
-      <pubDate>Wed, 29 Mar 2023 15:43:38 GMT</pubDate>
-      
-      <description>&lt;p&gt;Welcome to &lt;a href=&quot;https://hexo.io/&quot;&gt;Hexo&lt;/a&gt;! This is your very first post. Check &lt;a href=&quot;https://hexo.io/docs/&quot;&gt;documentation&lt;/a&gt; for more info. If you get any problems when using Hexo, you can find the answer in &lt;a href=&quot;https://hexo.io/docs/troubleshooting.html&quot;&gt;troubleshooting&lt;/a&gt; or you can ask me on &lt;a href=&quot;https://github.com/hexojs/hexo/issues&quot;&gt;GitHub&lt;/a&gt;.&lt;/p&gt;</description>
+      <category domain="http://zaynprocess.com/categories/markdown/">markdown</category>
       
       
-      
-      <content:encoded><![CDATA[<p>Welcome to <a href="https://hexo.io/">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues">GitHub</a>.</p><span id="more"></span><h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">&quot;My New Post&quot;</span></span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/writing.html">Writing</a></p><h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/server.html">Server</a></p><h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/generating.html">Generating</a></p><h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/one-command-deployment.html">Deployment</a></p>]]></content:encoded>
-      
+      <category domain="http://zaynprocess.com/tags/markdown/">markdown</category>
       
       
-      
-      <comments>http://zaynprocess.com/2023/03/29/hello-world%20-%20%E5%89%AF%E6%9C%AC/#disqus_thread</comments>
+      <comments>http://zaynprocess.com/2023/04/03/%E5%AD%A6%E4%B9%A0markdown/#disqus_thread</comments>
       
     </item>
     
