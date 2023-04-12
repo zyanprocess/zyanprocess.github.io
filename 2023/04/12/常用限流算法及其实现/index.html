@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.2">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/pace-js@1/themes/blue/pace-theme-minimal.css">
+  <script src="//cdn.jsdelivr.net/npm/pace-js@1/pace.min.js"></script>
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zyanprocess.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post"},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"manual","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在分布式系统中，应对高并发访问时，缓存、限流、降级是保护系统正常运行的常用方法。当请求量突发暴涨时，如果不加以限制访问，则可能导致整个系统崩溃，服务不可用。同时有一些业务场景，比如短信验证码，或者其它第三方API调用，也需要提供必要的访问限制支持。 常见的限流算法有令牌桶算法，漏桶算法，与计数器算法。本文主要对三个算法的基本原理及Google Guava包中令牌桶算法的实现RateLimiter进">
+<meta property="og:type" content="article">
+<meta property="og:title" content="常用限流算法及其实现">
+<meta property="og:url" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/index.html">
+<meta property="og:site_name" content="zaynの博客">
+<meta property="og:description" content="在分布式系统中，应对高并发访问时，缓存、限流、降级是保护系统正常运行的常用方法。当请求量突发暴涨时，如果不加以限制访问，则可能导致整个系统崩溃，服务不可用。同时有一些业务场景，比如短信验证码，或者其它第三方API调用，也需要提供必要的访问限制支持。 常见的限流算法有令牌桶算法，漏桶算法，与计数器算法。本文主要对三个算法的基本原理及Google Guava包中令牌桶算法的实现RateLimiter进">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
+<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-0736dde059726d7fb463c72afdc350e1_720w.png">
+<meta property="article:published_time" content="2023-04-12T06:08:28.000Z">
+<meta property="article:modified_time" content="2023-04-12T07:56:42.486Z">
+<meta property="article:author" content="zayn">
+<meta property="article:tag" content="限流">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
+
+<link rel="canonical" href="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>常用限流算法及其实现 | zaynの博客</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<link rel="alternate" href="/rss2.xml" title="zaynの博客" type="application/rss+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+    <a target="_blank" rel="noopener" href="https://github.com/zaynprocess" class="github-corner" aria-label="View source on GitHub"><svg width="80" height="80" viewBox="0 0 250 250" style="fill:#151513; color:#fff; position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a><style>.github-corner:hover .octo-arm{animation:octocat-wave 560ms ease-in-out}@keyframes octocat-wave{0%,100%{transform:rotate(0)}20%,60%{transform:rotate(-25deg)}40%,80%{transform:rotate(10deg)}}@media (max-width:500px){.github-corner:hover .octo-arm{animation:none}.github-corner .octo-arm{animation:octocat-wave 560ms ease-in-out}}</style>
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">zaynの博客</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-resources">
+
+    <a href="/resources/" rel="section"><i class="download fa-fw"></i>资源</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.jpg">
+      <meta itemprop="name" content="zayn">
+      <meta itemprop="description" content="从前追寻答案，现在相信过程">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="zaynの博客">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          常用限流算法及其实现
+        </h1>
+
+        <div class="post-meta">
+
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2023-04-12 14:08:28 / 修改时间：15:56:42" itemprop="dateCreated datePublished" datetime="2023-04-12T14:08:28+08:00">2023-04-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%90%8E%E7%AB%AF%E5%BC%80%E5%8F%91/" itemprop="url" rel="index"><span itemprop="name">后端开发</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>23k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>21 分钟</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在分布式系统中，应对高并发访问时，缓存、限流、降级是保护系统正常运行的常用方法。当请求量突发暴涨时，如果不加以限制访问，则可能导致整个系统崩溃，服务不可用。同时有一些业务场景，比如短信验证码，或者其它第三方API调用，也需要提供必要的访问限制支持。</p>
+<p>常见的限流算法有令牌桶算法，漏桶算法，与计数器算法。本文主要对三个算法的基本原理及Google Guava包中令牌桶算法的实现<code>RateLimiter</code>进行介绍，并实现以<code>RateLimiter</code>为参考的分布式限流实现及计数器限流实现。</p>
+<span id="more"></span>
+
+<h1 id="令牌桶算法"><a href="#令牌桶算法" class="headerlink" title="令牌桶算法"></a>令牌桶算法</h1><p>令牌桶算法的原理就是以一个恒定的速度往桶里放入令牌，每一个请求的处理都需要从桶里先获取一个令牌，当桶里没有令牌时，则请求不会被处理，要么排队等待，要么降级处理，要么直接拒绝服务。当桶里令牌满时，新添加的令牌会被丢弃或拒绝。</p>
+<p>令牌桶算法的处理示意图如下</p>
+<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace\Blog\source_posts\常用限流算法及其实现\v2-1118c1c9455d923d4b3c70291b689f7b_720w.png"></p>
+<p>令牌桶算法主要是可以控制请求的平均处理速率，它允许预消费，即可以提前消费令牌，以应对突发请求，但是后面的请求需要为预消费买单（等待更长的时间），以满足请求处理的平均速率是一定的。</p>
+<h1 id="漏桶算法"><a href="#漏桶算法" class="headerlink" title="漏桶算法"></a>漏桶算法</h1><p>漏桶算法的原理是水（请求）先进入漏桶中，漏桶以一定的速度出水（处理请求），当水流入速度大于流出速度导致水在桶内逐渐堆积直到桶满时，水会溢出（请求被拒绝）。</p>
+<p>漏桶算法的处理示意图如下</p>
+<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace\Blog\source_posts\常用限流算法及其实现\v2-0736dde059726d7fb463c72afdc350e1_720w.png"></p>
+<p>漏桶算法主要是控制请求的处理速率，平滑网络上的突发流量，请求可以以任意速度进入漏桶中，但请求的处理则以恒定的速度进行。</p>
+<h1 id="计数器算法"><a href="#计数器算法" class="headerlink" title="计数器算法"></a>计数器算法</h1><p>计数器算法是限流算法中最简单的一种算法，限制在一个时间窗口内，至多处理多少个请求。比如每分钟最多处理10个请求，则从第一个请求进来的时间为起点，60s的时间窗口内只允许最多处理10个请求。下一个时间窗口又以前一时间窗口过后第一个请求进来的时间为起点。常见的比如一分钟内只能获取一次短信验证码的功能可以通过计数器算法来实现。</p>
+<h1 id="Guava-RateLimiter解析"><a href="#Guava-RateLimiter解析" class="headerlink" title="Guava RateLimiter解析"></a>Guava RateLimiter解析</h1><p>Guava是Google开源的一个工具包，其中的<code>RateLimiter</code>是实现了令牌桶算法的一个限流工具类。在<code>pom.xml</code>中添加guava依赖，即可使用<code>RateLimiter</code></p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">dependency</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">groupId</span>&gt;</span>com.google.guava<span class="tag">&lt;/<span class="name">groupId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">artifactId</span>&gt;</span>guava<span class="tag">&lt;/<span class="name">artifactId</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">version</span>&gt;</span>29.0-jre<span class="tag">&lt;/<span class="name">version</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dependency</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>如下测试代码示例了<code>RateLimiter</code>的用法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> &#123;</span><br><span class="line">    <span class="type">RateLimiter</span> <span class="variable">rateLimiter</span> <span class="operator">=</span> RateLimiter.create(<span class="number">1</span>); <span class="comment">//创建一个每秒产生一个令牌的令牌桶</span></span><br><span class="line">    <span class="keyword">for</span>(<span class="type">int</span> i=<span class="number">1</span>;i&lt;=<span class="number">5</span>;i++) &#123;</span><br><span class="line">        <span class="type">double</span> <span class="variable">waitTime</span> <span class="operator">=</span> rateLimiter.acquire(i); <span class="comment">//一次获取i个令牌</span></span><br><span class="line">        System.out.println(<span class="string">&quot;acquire:&quot;</span> + i + <span class="string">&quot; waitTime:&quot;</span> + waitTime);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行后，输出如下</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">acquire:1 waitTime:0.0</span><br><span class="line">acquire:2 waitTime:0.997729</span><br><span class="line">acquire:3 waitTime:1.998076</span><br><span class="line">acquire:4 waitTime:3.000303</span><br><span class="line">acquire:5 waitTime:4.000223</span><br></pre></td></tr></table></figure>
+
+<p>第一次获取一个令牌时，等待0s立即可获取到（这里之所以不需要等待是因为令牌桶的预消费特性），第二次获取两个令牌，等待时间1s，这个1s就是前面获取一个令牌时因为预消费没有等待延到这次来等待的时间，这次获取两个又是预消费，所以下一次获取（取3个时）就要等待这次预消费需要的2s了，依此类推。可见预消费不需要等待的时间都由下一次来买单，以保障一定的平均处理速率（上例为1s一次）。</p>
+<p><code>RateLimiter</code>有两种实现：</p>
+<ol>
+<li>SmoothBursty： 令牌的生成速度恒定。使用 <code>RateLimiter.create(double permitsPerSecond)</code> 创建的是 SmoothBursty 实例。</li>
+<li>SmoothWarmingUp：令牌的生成速度持续提升，直到达到一个稳定的值。WarmingUp，顾名思义就是有一个热身的过程。使用 <code>RateLimiter.create(double permitsPerSecond, long warmupPeriod, TimeUnit unit)</code> 时创建就是 SmoothWarmingUp 实例，其中 warmupPeriod 就是热身达到稳定速度的时间。</li>
+</ol>
+<p>关键属性及方法解析（以 SmoothBursty 为例）</p>
+<ol>
+<li>关键属性</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 桶中当前拥有的令牌数. */</span></span><br><span class="line"><span class="type">double</span> storedPermits;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 桶中最多可以保存多少秒存入的令牌数 */</span></span><br><span class="line"><span class="type">double</span> maxBurstSeconds;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 桶中能存储的最大令牌数，等于storedPermits*maxBurstSeconds. */</span></span><br><span class="line"><span class="type">double</span> maxPermits;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 放入令牌的时间间隔*/</span></span><br><span class="line"><span class="type">double</span> stableIntervalMicros;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 下次可获取令牌的时间点，可以是过去也可以是将来的时间点*/</span></span><br><span class="line"><span class="keyword">private</span> <span class="type">long</span> <span class="variable">nextFreeTicketMicros</span> <span class="operator">=</span> <span class="number">0L</span>;</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li>关键方法</li>
+</ol>
+<p>调用 <code>RateLimiter.create(double permitsPerSecond)</code> 方法时，创建的是 SmoothBursty 实例，默认设置 maxBurstSeconds 为1s。SleepingStopwatch 是guava中的一个时钟类实现。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@VisibleForTesting</span></span><br><span class="line"><span class="keyword">static</span> RateLimiter <span class="title function_">create</span><span class="params">(<span class="type">double</span> permitsPerSecond, SleepingStopwatch stopwatch)</span> &#123;</span><br><span class="line">        <span class="type">RateLimiter</span> <span class="variable">rateLimiter</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">SmoothBursty</span>(stopwatch, <span class="number">1.0</span> <span class="comment">/* maxBurstSeconds */</span>);</span><br><span class="line">        rateLimiter.setRate(permitsPerSecond);</span><br><span class="line">        <span class="keyword">return</span> rateLimiter;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">SmoothBursty(SleepingStopwatch stopwatch, <span class="type">double</span> maxBurstSeconds) &#123;</span><br><span class="line">    <span class="built_in">super</span>(stopwatch);</span><br><span class="line">    <span class="built_in">this</span>.maxBurstSeconds = maxBurstSeconds;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>并通过调用 <code>SmoothBursty.doSetRate(double, long)</code> 方法进行初始化，该方法中:</p>
+<ol>
+<li>调用 <code>resync(nowMicros)</code> 对 storedPermits 与 nextFreeTicketMicros 进行了调整——如果当前时间晚于 nextFreeTicketMicros，则计算这段时间内产生的令牌数，累加到 storedPermits 上，并更新下次可获取令牌时间 nextFreeTicketMicros 为当前时间。</li>
+<li>计算 stableIntervalMicros 的值，1/permitsPerSecond。</li>
+<li>调用 <code>doSetRate(double, double)</code> 方法计算 maxPermits 值（maxBurstSeconds*permitsPerSecond），并根据旧的 maxPermits 值对 storedPermits 进行调整。</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> <span class="keyword">void</span> <span class="title function_">doSetRate</span><span class="params">(<span class="type">double</span> permitsPerSecond, <span class="type">long</span> nowMicros)</span> &#123;</span><br><span class="line">        resync(nowMicros);</span><br><span class="line">        <span class="type">double</span> <span class="variable">stableIntervalMicros</span> <span class="operator">=</span> SECONDS.toMicros(<span class="number">1L</span>) / permitsPerSecond;</span><br><span class="line">        <span class="built_in">this</span>.stableIntervalMicros = stableIntervalMicros;</span><br><span class="line">        doSetRate(permitsPerSecond, stableIntervalMicros);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** Updates &#123;<span class="doctag">@code</span> storedPermits&#125; and &#123;<span class="doctag">@code</span> nextFreeTicketMicros&#125; based on the current time. */</span></span><br><span class="line"><span class="keyword">void</span> <span class="title function_">resync</span><span class="params">(<span class="type">long</span> nowMicros)</span> &#123;</span><br><span class="line">        <span class="comment">// if nextFreeTicket is in the past, resync to now</span></span><br><span class="line">        <span class="keyword">if</span> (nowMicros &gt; nextFreeTicketMicros) &#123;</span><br><span class="line">        <span class="type">double</span> <span class="variable">newPermits</span> <span class="operator">=</span> (nowMicros - nextFreeTicketMicros) / coolDownIntervalMicros();</span><br><span class="line">        storedPermits = min(maxPermits, storedPermits + newPermits);</span><br><span class="line">        nextFreeTicketMicros = nowMicros;</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">void</span> <span class="title function_">doSetRate</span><span class="params">(<span class="type">double</span> permitsPerSecond, <span class="type">double</span> stableIntervalMicros)</span> &#123;</span><br><span class="line">        <span class="type">double</span> <span class="variable">oldMaxPermits</span> <span class="operator">=</span> <span class="built_in">this</span>.maxPermits;</span><br><span class="line">        maxPermits = maxBurstSeconds * permitsPerSecond;</span><br><span class="line">        <span class="keyword">if</span> (oldMaxPermits == Double.POSITIVE_INFINITY) &#123;</span><br><span class="line">                <span class="comment">// if we don&#x27;t special-case this, we would get storedPermits == NaN, below</span></span><br><span class="line">                storedPermits = maxPermits;</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                storedPermits =</span><br><span class="line">                        (oldMaxPermits == <span class="number">0.0</span>)</span><br><span class="line">                                ? <span class="number">0.0</span> <span class="comment">// initial state</span></span><br><span class="line">                                : storedPermits * maxPermits / oldMaxPermits;</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用 <code>acquire(int)</code> 方法获取指定数量的令牌时，</p>
+<ol>
+<li>调用 <code>reserve(int)</code> 方法，该方法最终调用 <code>reserveEarliestAvailable(int, long)</code> 来更新下次可取令牌时间点与当前存储的令牌数，并返回本次可取令牌的时间点，根据该时间点计算需要等待的时间</li>
+<li>阻塞等待1中返回的等待时间</li>
+<li>返回等待的时间（秒）</li>
+</ol>
+<p>源码如下所示</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 获取指定数量（permits）的令牌，阻塞直到获取到令牌，返回等待的时间*/</span></span><br><span class="line"><span class="meta">@CanIgnoreReturnValue</span></span><br><span class="line"><span class="keyword">public</span> <span class="type">double</span> <span class="title function_">acquire</span><span class="params">(<span class="type">int</span> <span class="keyword">permits</span>)</span> &#123;</span><br><span class="line">        <span class="type">long</span> <span class="variable">microsToWait</span> <span class="operator">=</span> reserve(<span class="keyword">permits</span>);</span><br><span class="line">        stopwatch.sleepMicrosUninterruptibly(microsToWait);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.0</span> * microsToWait / SECONDS.toMicros(<span class="number">1L</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">final</span> <span class="type">long</span> <span class="title function_">reserve</span><span class="params">(<span class="type">int</span> <span class="keyword">permits</span>)</span> &#123;</span><br><span class="line">        checkPermits(<span class="keyword">permits</span>);</span><br><span class="line">        <span class="keyword">synchronized</span> (mutex()) &#123;</span><br><span class="line">                <span class="keyword">return</span> reserveAndGetWaitLength(<span class="keyword">permits</span>, stopwatch.readMicros());</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 返回需要等待的时间*/</span></span><br><span class="line"><span class="keyword">final</span> <span class="type">long</span> <span class="title function_">reserveAndGetWaitLength</span><span class="params">(<span class="type">int</span> <span class="keyword">permits</span>, <span class="type">long</span> nowMicros)</span> &#123;</span><br><span class="line">        <span class="type">long</span> <span class="variable">momentAvailable</span> <span class="operator">=</span> reserveEarliestAvailable(<span class="keyword">permits</span>, nowMicros);</span><br><span class="line">        <span class="keyword">return</span> max(momentAvailable - nowMicros, <span class="number">0</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 针对此次需要获取的令牌数更新下次可取令牌时间点与存储的令牌数，返回本次可取令牌的时间点*/</span></span><br><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> <span class="type">long</span> <span class="title function_">reserveEarliestAvailable</span><span class="params">(<span class="type">int</span> requiredPermits, <span class="type">long</span> nowMicros)</span> &#123;</span><br><span class="line">        resync(nowMicros); <span class="comment">// 更新当前数据</span></span><br><span class="line">        <span class="type">long</span> <span class="variable">returnValue</span> <span class="operator">=</span> nextFreeTicketMicros;</span><br><span class="line">        <span class="type">double</span> <span class="variable">storedPermitsToSpend</span> <span class="operator">=</span> min(requiredPermits, <span class="built_in">this</span>.storedPermits); <span class="comment">// 本次可消费的令牌数</span></span><br><span class="line">        <span class="type">double</span> <span class="variable">freshPermits</span> <span class="operator">=</span> requiredPermits - storedPermitsToSpend; <span class="comment">// 需要新增的令牌数</span></span><br><span class="line">        <span class="type">long</span> <span class="variable">waitMicros</span> <span class="operator">=</span></span><br><span class="line">                storedPermitsToWaitTime(<span class="built_in">this</span>.storedPermits, storedPermitsToSpend)</span><br><span class="line">                        + (<span class="type">long</span>) (freshPermits * stableIntervalMicros); <span class="comment">// 需要等待的时间</span></span><br><span class="line"></span><br><span class="line">        <span class="built_in">this</span>.nextFreeTicketMicros = LongMath.saturatedAdd(nextFreeTicketMicros, waitMicros); <span class="comment">// 更新下次可取令牌的时间点</span></span><br><span class="line">        <span class="built_in">this</span>.storedPermits -= storedPermitsToSpend; <span class="comment">// 更新当前存储的令牌数</span></span><br><span class="line">        <span class="keyword">return</span> returnValue;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>acquire(int)</code> 方法是获取不到令牌时一直阻塞，直到获取到令牌，<code>tryAcquire(int,long,TimeUnit)</code> 方法则是在指定超时时间内尝试获取令牌，如果获取到或超时时间到则返回是否获取成功</p>
+<ol>
+<li>先判断是否能在指定超时时间内获取到令牌，通过 <code>nextFreeTicketMicros &lt;= timeoutMicros + nowMicros</code> 是否为true来判断，即可取令牌时间早于当前时间加超时时间则可取（预消费的特性），否则不可获取。</li>
+<li>如果不可获取，立即返回false。</li>
+<li>如果可获取，则调用 <code>reserveAndGetWaitLength(permits, nowMicros)</code> 来更新下次可取令牌时间点与当前存储的令牌数，返回等待时间（逻辑与前面相同），并阻塞等待相应的时间，返回true。</li>
+</ol>
+<p>源码如下所示</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">tryAcquire</span><span class="params">(<span class="type">int</span> <span class="keyword">permits</span>, <span class="type">long</span> timeout, TimeUnit unit)</span> &#123;</span><br><span class="line">        <span class="type">long</span> <span class="variable">timeoutMicros</span> <span class="operator">=</span> max(unit.toMicros(timeout), <span class="number">0</span>);</span><br><span class="line">        checkPermits(<span class="keyword">permits</span>);</span><br><span class="line">        <span class="type">long</span> microsToWait;</span><br><span class="line">        <span class="keyword">synchronized</span> (mutex()) &#123;</span><br><span class="line">                <span class="type">long</span> <span class="variable">nowMicros</span> <span class="operator">=</span> stopwatch.readMicros();</span><br><span class="line">                <span class="keyword">if</span> (!canAcquire(nowMicros, timeoutMicros)) &#123; <span class="comment">//判断是否能在超时时间内获取指定数量的令牌</span></span><br><span class="line">                        <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                        microsToWait = reserveAndGetWaitLength(<span class="keyword">permits</span>, nowMicros);</span><br><span class="line">                &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        stopwatch.sleepMicrosUninterruptibly(microsToWait);</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="type">boolean</span> <span class="title function_">canAcquire</span><span class="params">(<span class="type">long</span> nowMicros, <span class="type">long</span> timeoutMicros)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> queryEarliestAvailable(nowMicros) - timeoutMicros &lt;= nowMicros; <span class="comment">//只要可取时间小于当前时间+超时时间，则可获取（可预消费的特性！）</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Override</span></span><br><span class="line"><span class="keyword">final</span> <span class="type">long</span> <span class="title function_">queryEarliestAvailable</span><span class="params">(<span class="type">long</span> nowMicros)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> nextFreeTicketMicros;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以上就是 SmoothBursty 实现的基本处理流程。注意两点：</p>
+<ol>
+<li>RateLimiter 通过限制后面请求的等待时间，来支持一定程度的突发请求——预消费的特性。</li>
+<li>RateLimiter 令牌桶的实现并不是起一个线程不断往桶里放令牌，而是以一种延迟计算的方式（参考<code>resync</code>函数），在每次获取令牌之前计算该段时间内可以产生多少令牌，将产生的令牌加入令牌桶中并更新数据来实现，比起一个线程来不断往桶里放令牌高效得多。（想想如果需要针对每个用户限制某个接口的访问，则针对每个用户都得创建一个RateLimiter，并起一个线程来控制令牌存放的话，如果在线用户数有几十上百万，起线程来控制是一件多么恐怖的事情）</li>
+</ol>
+<p>Guava 的 RateLimiter 是令牌桶算法的一种实现，但 RateLimiter 只适用于单机应用，在分布式环境下就不适用了。</p>
+<h1 id="限速控制"><a href="#限速控制" class="headerlink" title="限速控制"></a>限速控制</h1><h2 id="令牌桶模型"><a href="#令牌桶模型" class="headerlink" title="令牌桶模型"></a>令牌桶模型</h2><p>首先定义令牌桶模型，与RateLimiter中类似，包括几个关键属性与关键方法。其中关键属性定义如下，</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Data</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">RedisPermits</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 最大存储令牌数</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> maxPermits;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 当前存储令牌数</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> storedPermits;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 添加令牌时间间隔/毫秒</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> intervalMillis;</span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 下次请求可以获取令牌的时间，可以是过去（令牌积累）也可以是将来的时间（令牌预消费）</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">long</span> nextFreeTicketMillis;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">RedisPermits</span><span class="params">()</span>&#123;&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>关键方法定义与RateLimiter也大同小异</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 构建Redis令牌数据模型</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@param</span> permitsPerSecond     每秒放入的令牌数</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@param</span> maxBurstSeconds      maxPermits由此字段计算，最大存储maxBurstSeconds秒生成的令牌</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@param</span> nextFreeTicketMillis 下次请求可以获取令牌的起始时间，默认当前系统时间</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="title function_">RedisPermits</span><span class="params">(<span class="type">double</span> permitsPerSecond, <span class="type">double</span> maxBurstSeconds, Long nextFreeTicketMillis)</span> &#123;</span><br><span class="line">    <span class="built_in">this</span>.maxPermits = permitsPerSecond * maxBurstSeconds;</span><br><span class="line">    <span class="built_in">this</span>.storedPermits = maxPermits;</span><br><span class="line">    <span class="built_in">this</span>.intervalMillis = TimeUnit.SECONDS.toMillis(<span class="number">1</span>) / permitsPerSecond;</span><br><span class="line">    <span class="built_in">this</span>.nextFreeTicketMillis = nextFreeTicketMillis;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 基于当前时间，若当前时间晚于nextFreeTicketMicros，则计算该段时间内可以生成多少令牌，将生成的令牌加入令牌桶中并更新数据</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">resync</span><span class="params">(<span class="type">long</span> nowMillis)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (nowMillis &gt; nextFreeTicketMillis) &#123;</span><br><span class="line">        <span class="type">double</span> <span class="variable">newPermits</span> <span class="operator">=</span> (nowMillis - nextFreeTicketMillis) / intervalMillis;</span><br><span class="line">        storedPermits = Math.min(maxPermits, storedPermits + newPermits);</span><br><span class="line">        nextFreeTicketMillis = nowMillis;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="type">long</span> <span class="title function_">reserveAndGetWaitLength</span><span class="params">(<span class="type">long</span> nowMillis, <span class="type">int</span> <span class="keyword">permits</span>)</span> &#123;</span><br><span class="line">    resync(nowMillis);</span><br><span class="line">    <span class="type">double</span> <span class="variable">storedPermitsToSpend</span> <span class="operator">=</span> Math.min(<span class="keyword">permits</span>, storedPermits); <span class="comment">// 可以消耗的令牌数</span></span><br><span class="line">    <span class="type">double</span> <span class="variable">freshPermits</span> <span class="operator">=</span> <span class="keyword">permits</span> - storedPermitsToSpend; <span class="comment">// 需要等待的令牌数</span></span><br><span class="line">    <span class="type">long</span> <span class="variable">waitMillis</span> <span class="operator">=</span> (<span class="type">long</span>) (freshPermits * intervalMillis); <span class="comment">// 需要等待的时间</span></span><br><span class="line"></span><br><span class="line">    nextFreeTicketMillis = LongMath.saturatedAdd(nextFreeTicketMillis, waitMillis);</span><br><span class="line">    storedPermits -= storedPermitsToSpend;</span><br><span class="line">    <span class="keyword">return</span> waitMillis;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">canAcquire</span><span class="params">(<span class="type">long</span> nowMillis, <span class="type">int</span> <span class="keyword">permits</span>, <span class="type">long</span> timeoutMillis)</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> queryEarliestAvailable(nowMillis, <span class="keyword">permits</span>) &lt;= timeoutMillis;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 指定数量令牌数可用的等待时间</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@param</span> permits 需保留的令牌数</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@return</span> 指定数量令牌可用的等待时间，如果为0或负数，表述当前可用</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">private</span> <span class="type">long</span> <span class="title function_">queryEarliestAvailable</span><span class="params">(<span class="type">long</span> nowMillis, <span class="type">int</span> <span class="keyword">permits</span>)</span> &#123;</span><br><span class="line">    resync(nowMillis);</span><br><span class="line">    <span class="type">double</span> <span class="variable">storedPermitsToSpend</span> <span class="operator">=</span> Math.min(<span class="keyword">permits</span>, storedPermits); <span class="comment">// 可以消耗的令牌数</span></span><br><span class="line">    <span class="type">double</span> <span class="variable">freshPermits</span> <span class="operator">=</span> <span class="keyword">permits</span> - storedPermitsToSpend; <span class="comment">// 需要等待的令牌数</span></span><br><span class="line">    <span class="type">long</span> <span class="variable">waitMillis</span> <span class="operator">=</span> (<span class="type">long</span>) (freshPermits * intervalMillis); <span class="comment">// 需要等待的时间</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> LongMath.saturatedAdd(nextFreeTicketMillis - nowMillis, waitMillis);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="令牌控制类"><a href="#令牌控制类" class="headerlink" title="令牌控制类"></a>令牌控制类</h2><p>Guava RateLimiter中的控制都在RateLimiter及其子类中（如SmoothBursty），本处涉及到分布式环境下的同步，因此将其解耦，令牌桶模型存储于Redis中，对其同步操作的控制放置在如下控制类</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 限速控制</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Author</span> ronwxy</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Date</span> 2020/6/24 17:41</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Version</span> 1.0</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="meta">@Slf4j</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">RedisRateLimiter</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">String</span> <span class="variable">LOCK_KEY_SUFFIX</span> <span class="operator">=</span> <span class="string">&quot;:lock&quot;</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> PermitsRedisTemplate permitsRedisTemplate;</span><br><span class="line">    <span class="keyword">private</span> StringRedisTemplate stringRedisTemplate;</span><br><span class="line">    <span class="keyword">private</span> DistributedLock lock;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> permitsPerSecond;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">double</span> maxBurstSeconds;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">long</span> expire;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">RedisRateLimiter</span><span class="params">(PermitsRedisTemplate permitsRedisTemplate, StringRedisTemplate stringRedisTemplate, DistributedLock lock, <span class="type">double</span> permitsPerSecond,</span></span><br><span class="line"><span class="params">                            <span class="type">double</span> maxBurstSeconds, <span class="type">long</span> expire)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.permitsRedisTemplate = permitsRedisTemplate;</span><br><span class="line">        <span class="built_in">this</span>.stringRedisTemplate = stringRedisTemplate;</span><br><span class="line">        <span class="built_in">this</span>.lock = lock;</span><br><span class="line">        <span class="built_in">this</span>.permitsPerSecond = permitsPerSecond;</span><br><span class="line">        <span class="built_in">this</span>.maxBurstSeconds = maxBurstSeconds;</span><br><span class="line">        <span class="built_in">this</span>.expire = expire;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 获取一个令牌，阻塞一直到获取令牌，返回阻塞等待时间</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> time 阻塞等待时间/毫秒</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">long</span> <span class="title function_">acquire</span><span class="params">(String key)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        <span class="keyword">return</span> acquire(key, <span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 获取指定数量的令牌，如果令牌数不够，则一直阻塞，返回阻塞等待的时间</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> permits 需要获取的令牌数</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> time 等待的时间/毫秒</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IllegalArgumentException tokens值不能为负数或零</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">long</span> <span class="title function_">acquire</span><span class="params">(String key, <span class="type">int</span> <span class="keyword">permits</span>)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        <span class="type">long</span> <span class="variable">millisToWait</span> <span class="operator">=</span> reserve(key, <span class="keyword">permits</span>);</span><br><span class="line">        log.info(<span class="string">&quot;acquire &#123;&#125; permits for key[&#123;&#125;], waiting for &#123;&#125;ms&quot;</span>, <span class="keyword">permits</span>, key, millisToWait);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            Thread.sleep(millisToWait);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line">            log.error(<span class="string">&quot;Interrupted when trying to acquire &#123;&#125; permits for key[&#123;&#125;]&quot;</span>, <span class="keyword">permits</span>, key, e);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> millisToWait;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 在指定时间内获取一个令牌，如果获取不到则一直阻塞，直到超时</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> timeout 最大等待时间（超时时间），为0则不等待立即返回</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> unit    时间单元</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> 获取到令牌则true，否则false</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IllegalArgumentException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">tryAcquire</span><span class="params">(String key, <span class="type">long</span> timeout, TimeUnit unit)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        <span class="keyword">return</span> tryAcquire(key, <span class="number">1</span>, timeout, unit);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 在指定时间内获取指定数量的令牌，如果在指定时间内获取不到指定数量的令牌，则直接返回false，</span></span><br><span class="line"><span class="comment">     * 否则阻塞直到能获取到指定数量的令牌</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> permits 需要获取的令牌数</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> timeout 最大等待时间（超时时间）</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> unit    时间单元</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> 如果在指定时间内能获取到指定令牌数，则true,否则false</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IllegalArgumentException tokens为负数或零，抛出异常</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">tryAcquire</span><span class="params">(String key, <span class="type">int</span> <span class="keyword">permits</span>, <span class="type">long</span> timeout, TimeUnit unit)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        <span class="type">long</span> <span class="variable">timeoutMillis</span> <span class="operator">=</span> Math.max(unit.toMillis(timeout), <span class="number">0</span>);</span><br><span class="line">        checkPermits(<span class="keyword">permits</span>);</span><br><span class="line"></span><br><span class="line">        <span class="type">long</span> millisToWait;</span><br><span class="line">        <span class="type">boolean</span> <span class="variable">locked</span> <span class="operator">=</span> <span class="literal">false</span>;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            locked = lock.lock(key + LOCK_KEY_SUFFIX, WebUtil.getRequestId(), <span class="number">60</span>, <span class="number">2</span>, TimeUnit.SECONDS);</span><br><span class="line">            <span class="keyword">if</span> (locked) &#123;</span><br><span class="line">                <span class="type">long</span> <span class="variable">nowMillis</span> <span class="operator">=</span> getNowMillis();</span><br><span class="line">                <span class="type">RedisPermits</span> <span class="variable">permit</span> <span class="operator">=</span> getPermits(key, nowMillis);</span><br><span class="line">                <span class="keyword">if</span> (!permit.canAcquire(nowMillis, <span class="keyword">permits</span>, timeoutMillis)) &#123;</span><br><span class="line">                    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    millisToWait = permit.reserveAndGetWaitLength(nowMillis, <span class="keyword">permits</span>);</span><br><span class="line">                    permitsRedisTemplate.opsForValue().set(key, permit, expire, TimeUnit.SECONDS);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">false</span>;  <span class="comment">//超时获取不到锁，也返回false</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (locked) &#123;</span><br><span class="line">                lock.unLock(key + LOCK_KEY_SUFFIX, WebUtil.getRequestId());</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (millisToWait &gt; <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                Thread.sleep(millisToWait);</span><br><span class="line">            &#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line"></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 保留指定的令牌数待用</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> permits 需保留的令牌数</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> time 令牌可用的等待时间</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IllegalArgumentException tokens不能为负数或零</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">long</span> <span class="title function_">reserve</span><span class="params">(String key, <span class="type">int</span> <span class="keyword">permits</span>)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        checkPermits(<span class="keyword">permits</span>);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            lock.lock(key + LOCK_KEY_SUFFIX, WebUtil.getRequestId(), <span class="number">60</span>, <span class="number">2</span>, TimeUnit.SECONDS);</span><br><span class="line">            <span class="type">long</span> <span class="variable">nowMillis</span> <span class="operator">=</span> getNowMillis();</span><br><span class="line">            <span class="type">RedisPermits</span> <span class="variable">permit</span> <span class="operator">=</span> getPermits(key, nowMillis);</span><br><span class="line">            <span class="type">long</span> <span class="variable">waitMillis</span> <span class="operator">=</span> permit.reserveAndGetWaitLength(nowMillis, <span class="keyword">permits</span>);</span><br><span class="line">            permitsRedisTemplate.opsForValue().set(key, permit, expire, TimeUnit.SECONDS);</span><br><span class="line">            <span class="keyword">return</span> waitMillis;</span><br><span class="line">        &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">            lock.unLock(key + LOCK_KEY_SUFFIX, WebUtil.getRequestId());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 获取令牌桶</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span></span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> RedisPermits <span class="title function_">getPermits</span><span class="params">(String key, <span class="type">long</span> nowMillis)</span> &#123;</span><br><span class="line">        <span class="type">RedisPermits</span> <span class="variable">permit</span> <span class="operator">=</span> permitsRedisTemplate.opsForValue().get(key);</span><br><span class="line">        <span class="keyword">if</span> (permit == <span class="literal">null</span>) &#123;</span><br><span class="line">            permit = <span class="keyword">new</span> <span class="title class_">RedisPermits</span>(permitsPerSecond, maxBurstSeconds, nowMillis);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> permit;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 获取redis服务器时间</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> <span class="type">long</span> <span class="title function_">getNowMillis</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="type">String</span> <span class="variable">luaScript</span> <span class="operator">=</span> <span class="string">&quot;return redis.call(&#x27;time&#x27;)&quot;</span>; <span class="comment">//&quot;TIME&quot;;</span></span><br><span class="line">        DefaultRedisScript&lt;List&gt; redisScript = <span class="keyword">new</span> <span class="title class_">DefaultRedisScript</span>&lt;&gt;(luaScript, List.class);</span><br><span class="line">        List&lt;String&gt; now = (List&lt;String&gt;)stringRedisTemplate.execute(redisScript, <span class="literal">null</span>);</span><br><span class="line">        <span class="keyword">return</span> now == <span class="literal">null</span> ? System.currentTimeMillis() : Long.valueOf(now.get(<span class="number">0</span>))*<span class="number">1000</span>+Long.valueOf(now.get(<span class="number">1</span>))/<span class="number">1000</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> String <span class="title function_">toString</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> String.format(Locale.ROOT, <span class="string">&quot;RateLimiter[rate=%3.1fqps]&quot;</span>, permitsPerSecond);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">checkPermits</span><span class="params">(<span class="type">long</span> <span class="keyword">permits</span>)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        Preconditions.checkArgument(<span class="keyword">permits</span> &gt; <span class="number">0</span>, <span class="string">&quot;Requested permits (%s) must be positive: &quot;</span>, <span class="keyword">permits</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ol>
+<li>acquire 是阻塞方法，如果没有可用的令牌，则一直阻塞直到获取到令牌。</li>
+<li>tryAcquire 则是非阻塞方法，如果在指定超时时间内获取不到指定数量的令牌，则直接返回false，不阻塞等待。</li>
+<li>getNowMillis 获取Redis服务器时间，避免业务服务器时间不一致导致的问题，如果业务服务器能保障时间同步，则可从本地获取提高效率。</li>
+</ol>
+<h2 id="令牌桶控制工厂类"><a href="#令牌桶控制工厂类" class="headerlink" title="令牌桶控制工厂类"></a>令牌桶控制工厂类</h2><p>工厂类负责管理令牌桶控制类，将其缓存在本地，这里使用了Guava中的Cache，一方面避免每次都新建控制类提高效率，另一方面通过控制缓存的最大容量来避免像用户粒度的限流占用过多的内存。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">RedisRateLimiterFactory</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> PermitsRedisTemplate permitsRedisTemplate;</span><br><span class="line">    <span class="keyword">private</span> StringRedisTemplate stringRedisTemplate;</span><br><span class="line">    <span class="keyword">private</span> DistributedLock distributedLock;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> Cache&lt;String, RedisRateLimiter&gt; cache = CacheBuilder.newBuilder()</span><br><span class="line">            .initialCapacity(<span class="number">100</span>)  <span class="comment">//初始大小</span></span><br><span class="line">            .maximumSize(<span class="number">10000</span>) <span class="comment">// 缓存的最大容量</span></span><br><span class="line">            .expireAfterAccess(<span class="number">5</span>, TimeUnit.MINUTES) <span class="comment">// 缓存在最后一次访问多久之后失效</span></span><br><span class="line">            .concurrencyLevel(Runtime.getRuntime().availableProcessors()) <span class="comment">// 设置并发级别</span></span><br><span class="line">            .build();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">RedisRateLimiterFactory</span><span class="params">(PermitsRedisTemplate permitsRedisTemplate, StringRedisTemplate stringRedisTemplate, DistributedLock distributedLock)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.permitsRedisTemplate = permitsRedisTemplate;</span><br><span class="line">        <span class="built_in">this</span>.stringRedisTemplate = stringRedisTemplate;</span><br><span class="line">        <span class="built_in">this</span>.distributedLock = distributedLock;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 创建RateLimiter</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> key              Redis key</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> permitsPerSecond 每秒放入的令牌数</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> maxBurstSeconds  最大存储maxBurstSeconds秒生成的令牌</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> expire           该令牌桶的redis tty/秒</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> RateLimiter</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> RedisRateLimiter <span class="title function_">build</span><span class="params">(String key, <span class="type">double</span> permitsPerSecond, <span class="type">double</span> maxBurstSeconds, <span class="type">int</span> expire)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (cache.getIfPresent(key) == <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="keyword">synchronized</span> (<span class="built_in">this</span>) &#123;</span><br><span class="line">                <span class="keyword">if</span> (cache.getIfPresent(key) == <span class="literal">null</span>) &#123;</span><br><span class="line">                    cache.put(key, <span class="keyword">new</span> <span class="title class_">RedisRateLimiter</span>(permitsRedisTemplate, stringRedisTemplate, distributedLock, permitsPerSecond,</span><br><span class="line">                            maxBurstSeconds, expire));</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> cache.getIfPresent(key);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="注解支持"><a href="#注解支持" class="headerlink" title="注解支持"></a>注解支持</h2><p>定义注解 @RateLimit 如下，表示以每秒rate的速率放置令牌，最多保留burst秒的令牌，取令牌的超时时间为timeout，limitType用于控制key类型，目前支持：</p>
+<ol>
+<li>IP, 根据客户端IP限流</li>
+<li>USER, 根据用户限流，对于Spring Security可从SecurityContextHolder中获取当前用户信息，如userId</li>
+<li>METHOD, 根据方法名全局限流，className.methodName，注意避免同时对同一个类中的同名方法做限流控制，否则需要修改获取key的逻辑</li>
+<li>CUSTOM，自定义，支持表达式解析，如#{id}, #{user.id}</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Retention(RetentionPolicy.RUNTIME)</span></span><br><span class="line"><span class="meta">@Target(ElementType.METHOD)</span></span><br><span class="line"><span class="keyword">public</span> <span class="meta">@interface</span> RateLimit &#123;</span><br><span class="line">    String <span class="title function_">key</span><span class="params">()</span> <span class="keyword">default</span> <span class="string">&quot;&quot;</span>;</span><br><span class="line">    String <span class="title function_">prefix</span><span class="params">()</span> <span class="keyword">default</span> <span class="string">&quot;rateLimit:&quot;</span>; <span class="comment">//key前缀</span></span><br><span class="line">    <span class="type">int</span> <span class="title function_">expire</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">60</span>; <span class="comment">// 表示令牌桶模型RedisPermits redis key的过期时间/秒</span></span><br><span class="line">    <span class="type">double</span> <span class="title function_">rate</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">1.0</span>; <span class="comment">// permitsPerSecond值</span></span><br><span class="line">    <span class="type">double</span> <span class="title function_">burst</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">1.0</span>; <span class="comment">// maxBurstSeconds值</span></span><br><span class="line">    <span class="type">int</span> <span class="title function_">timeout</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">0</span>; <span class="comment">// 超时时间/秒</span></span><br><span class="line">    LimitType <span class="title function_">limitType</span><span class="params">()</span> <span class="keyword">default</span> LimitType.METHOD;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>通过切面的前置增强来为添加了 @RateLimit 注解的方法提供限流控制，如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Aspect</span></span><br><span class="line"><span class="meta">@Slf4j</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">RedisLimitAspect</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">String</span> <span class="variable">LIMIT_MESSAGE</span> <span class="operator">=</span> <span class="string">&quot;您的访问过于频繁，请稍后重试&quot;</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> RedisCountLimiter redisCountLimiter;</span><br><span class="line">    <span class="keyword">private</span> RedisRateLimiterFactory redisRateLimiterFactory;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">RedisLimitAspect</span><span class="params">(RedisCountLimiter redisCountLimiter, RedisRateLimiterFactory redisRateLimiterFactory)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.redisCountLimiter = redisCountLimiter;</span><br><span class="line">        <span class="built_in">this</span>.redisRateLimiterFactory = redisRateLimiterFactory;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Before(value = &quot;@annotation(rateLimit)&quot;)</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">rateLimit</span><span class="params">(JoinPoint  point, RateLimit rateLimit)</span> <span class="keyword">throws</span> Throwable &#123;</span><br><span class="line">        <span class="type">String</span> <span class="variable">key</span> <span class="operator">=</span> getKey(point, rateLimit.limitType(), rateLimit.key(), rateLimit.prefix());</span><br><span class="line">        <span class="type">RedisRateLimiter</span> <span class="variable">redisRateLimiter</span> <span class="operator">=</span> redisRateLimiterFactory.build(key, rateLimit.rate(), rateLimit.burst(), rateLimit.expire());</span><br><span class="line">        <span class="keyword">if</span>(!redisRateLimiter.tryAcquire(key, rateLimit.timeout(), TimeUnit.SECONDS))&#123;</span><br><span class="line">            ExceptionUtil.rethrowClientSideException(LIMIT_MESSAGE);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> String <span class="title function_">getKey</span><span class="params">(JoinPoint  point, LimitType limitType, String originKey, String prefix)</span> &#123;</span><br><span class="line">        String key;</span><br><span class="line">        <span class="keyword">switch</span> (limitType) &#123;</span><br><span class="line">            <span class="keyword">case</span> IP:</span><br><span class="line">                key = WebUtil.getIP();</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            <span class="keyword">case</span> USER:</span><br><span class="line">                <span class="type">Long</span> <span class="variable">userId</span> <span class="operator">=</span> SecurityUtil.getUserId();</span><br><span class="line">                <span class="keyword">if</span>(userId == <span class="literal">null</span>) &#123;</span><br><span class="line">                    ExceptionUtil.rethrowClientSideException(<span class="string">&quot;获取不到用户信息&quot;</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                key = String.valueOf(userId);</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            <span class="keyword">case</span> METHOD:</span><br><span class="line">                key = ((Class) point.getTarget()).getName() + <span class="string">&quot;:&quot;</span> + ((MethodSignature) point.getSignature()).getMethod().getName();</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            <span class="keyword">case</span> CUSTOM:</span><br><span class="line">                key = String.valueOf(resolve(point, originKey));</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            <span class="keyword">default</span>:</span><br><span class="line">                key = <span class="string">&quot;&quot;</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (StringUtils.isBlank(key)) &#123;</span><br><span class="line">            ExceptionUtil.rethrowClientSideException(<span class="string">&quot;Key不能为空&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> prefix + key;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> Object <span class="title function_">resolve</span><span class="params">(JoinPoint joinPoint, String placeholder)</span> &#123;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (StringUtils.isBlank(placeholder)) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="type">Object</span> <span class="variable">value</span> <span class="operator">=</span> <span class="literal">null</span>;</span><br><span class="line">        <span class="keyword">if</span> (placeholder.matches(<span class="string">&quot;#\\&#123;\\D*\\&#125;&quot;</span>)) &#123;<span class="comment">// 匹配上#&#123;&#125;,则把内容当作变量</span></span><br><span class="line">            <span class="type">String</span> <span class="variable">param</span> <span class="operator">=</span> placeholder.replaceAll(<span class="string">&quot;#\\&#123;&quot;</span>, <span class="string">&quot;&quot;</span>).replaceAll(<span class="string">&quot;\\&#125;&quot;</span>, <span class="string">&quot;&quot;</span>);</span><br><span class="line">            <span class="keyword">if</span> (param.contains(<span class="string">&quot;.&quot;</span>)) &#123; <span class="comment">// 多层引用</span></span><br><span class="line">                <span class="keyword">try</span> &#123;</span><br><span class="line">                    value = complexResolve(joinPoint, param);</span><br><span class="line">                &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">                    log.error(<span class="string">&quot;fail to resolve value for &#123;&#125;&quot;</span>, param, e);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                value = simpleResolve(joinPoint, param);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            value = placeholder;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> value;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 多层引用参数解析值</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> joinPoint</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> placeholder</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span></span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> Exception</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> Object <span class="title function_">complexResolve</span><span class="params">(JoinPoint joinPoint, String placeholder)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">        <span class="type">MethodSignature</span> <span class="variable">methodSignature</span> <span class="operator">=</span> (MethodSignature) joinPoint.getSignature();</span><br><span class="line">        String[] names = methodSignature.getParameterNames();</span><br><span class="line">        Object[] args = joinPoint.getArgs();</span><br><span class="line">        String[] params = placeholder.split(<span class="string">&quot;\\.&quot;</span>);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; names.length; i++) &#123;</span><br><span class="line">            <span class="keyword">if</span> (params[<span class="number">0</span>].equals(names[i])) &#123;</span><br><span class="line">                <span class="type">Object</span> <span class="variable">obj</span> <span class="operator">=</span> args[i];</span><br><span class="line">                <span class="type">Method</span> <span class="variable">getMethod</span> <span class="operator">=</span> obj.getClass().getDeclaredMethod(getMethodName(params[<span class="number">1</span>]), <span class="literal">null</span>);</span><br><span class="line">                <span class="type">Object</span> <span class="variable">value</span> <span class="operator">=</span> getMethod.invoke(args[i]);</span><br><span class="line">                <span class="keyword">return</span> getValue(value, <span class="number">1</span>, params);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line"></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 简单参数获取值</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> joinPoint</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> placeholder</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span></span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">private</span> Object <span class="title function_">simpleResolve</span><span class="params">(JoinPoint joinPoint, String placeholder)</span> &#123;</span><br><span class="line">        <span class="type">MethodSignature</span> <span class="variable">methodSignature</span> <span class="operator">=</span> (MethodSignature) joinPoint.getSignature();</span><br><span class="line">        String[] names = methodSignature.getParameterNames();</span><br><span class="line">        Object[] args = joinPoint.getArgs();</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; names.length; i++) &#123;</span><br><span class="line">            <span class="keyword">if</span> (placeholder.equals(names[i])) &#123;</span><br><span class="line">                <span class="keyword">return</span> args[i];</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> Object <span class="title function_">getValue</span><span class="params">(Object obj, <span class="type">int</span> index, String[] params)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">        <span class="keyword">if</span> (obj != <span class="literal">null</span> &amp;&amp; index &lt; params.length - <span class="number">1</span>) &#123;</span><br><span class="line">            <span class="type">Method</span> <span class="variable">method</span> <span class="operator">=</span> obj.getClass().getDeclaredMethod(getMethodName(params[index + <span class="number">1</span>]), <span class="literal">null</span>);</span><br><span class="line">            obj = method.invoke(obj);</span><br><span class="line">            getValue(obj, index + <span class="number">1</span>, params);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> obj;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> String <span class="title function_">getMethodName</span><span class="params">(String name)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;get&quot;</span> + StringUtils.capitalize(name);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h1 id="限量控制"><a href="#限量控制" class="headerlink" title="限量控制"></a>限量控制</h1><h2 id="限量控制类"><a href="#限量控制类" class="headerlink" title="限量控制类"></a>限量控制类</h2><p>限制一个时间窗口内的访问量，可使用计数器算法，借助Lua脚本执行的原子性来实现。</p>
+<p>Lua脚本逻辑：</p>
+<ol>
+<li>以需要控制的对象为key（如方法，用户ID，或IP等），当前访问次数为Value，时间窗口值为缓存的过期时间</li>
+<li>如果key存在则将其增1，判断当前值是否大于访问量限制值，如果大于则返回0，表示该时间窗口内已达访问量上限，如果小于则返回1表示允许访问</li>
+<li>如果key不存在，则将其初始化为1，并设置过期时间，返回1表示允许访问</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">RedisCountLimiter</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> StringRedisTemplate stringRedisTemplate;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">String</span> <span class="variable">LUA_SCRIPT</span> <span class="operator">=</span> <span class="string">&quot;local c \nc = redis.call(&#x27;get&#x27;,KEYS[1]) \nif c and redis.call(&#x27;incr&#x27;,KEYS[1]) &gt; tonumber(ARGV[1]) then return 0 end&quot;</span></span><br><span class="line">            + <span class="string">&quot; \nif c then return 1 else \nredis.call(&#x27;set&#x27;, KEYS[1], 1) \nredis.call(&#x27;expire&#x27;, KEYS[1], tonumber(ARGV[2])) \nreturn 1 end&quot;</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">int</span> <span class="variable">SUCCESS_RESULT</span> <span class="operator">=</span> <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">int</span> <span class="variable">FAIL_RESULT</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">RedisCountLimiter</span><span class="params">(StringRedisTemplate stringRedisTemplate)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.stringRedisTemplate = stringRedisTemplate;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 是否允许访问</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> key redis key</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> limit 限制次数</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> expire 时间段/秒</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> 获取成功true，否则false</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IllegalArgumentException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">tryAcquire</span><span class="params">(String key, <span class="type">int</span> limit, <span class="type">int</span> expire)</span> <span class="keyword">throws</span> IllegalArgumentException &#123;</span><br><span class="line">        RedisScript&lt;Number&gt; redisScript = <span class="keyword">new</span> <span class="title class_">DefaultRedisScript</span>&lt;&gt;(LUA_SCRIPT, Number.class);</span><br><span class="line">        <span class="type">Number</span> <span class="variable">result</span> <span class="operator">=</span> stringRedisTemplate.execute(redisScript, Collections.singletonList(key), String.valueOf(limit), String.valueOf(expire));</span><br><span class="line">        <span class="keyword">if</span>(result != <span class="literal">null</span> &amp;&amp; result.intValue() == SUCCESS_RESULT) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="注解支持-1"><a href="#注解支持-1" class="headerlink" title="注解支持"></a>注解支持</h2><p>定义注解 @CountLimit 如下，表示在period时间窗口内，最多允许访问limit次，limitType用于控制key类型，取值与 @RateLimit 同。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Retention(RetentionPolicy.RUNTIME)</span></span><br><span class="line"><span class="meta">@Target(ElementType.METHOD)</span></span><br><span class="line"><span class="keyword">public</span> <span class="meta">@interface</span> CountLimit &#123;</span><br><span class="line">    String <span class="title function_">key</span><span class="params">()</span> <span class="keyword">default</span> <span class="string">&quot;&quot;</span>;</span><br><span class="line">    String <span class="title function_">prefix</span><span class="params">()</span> <span class="keyword">default</span> <span class="string">&quot;countLimit:&quot;</span>; <span class="comment">//key前缀</span></span><br><span class="line">    <span class="type">int</span> <span class="title function_">limit</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">1</span>;  <span class="comment">// expire时间段内限制访问次数</span></span><br><span class="line">    <span class="type">int</span> <span class="title function_">period</span><span class="params">()</span> <span class="keyword">default</span> <span class="number">1</span>; <span class="comment">// 表示时间段/秒</span></span><br><span class="line">    LimitType <span class="title function_">limitType</span><span class="params">()</span> <span class="keyword">default</span> LimitType.METHOD;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>同样采用前值增强来为添加了 @CountLimit 注解的方法提供限流控制，如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Before(value = &quot;@annotation(countLimit)&quot;)</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">countLimit</span><span class="params">(JoinPoint  point, CountLimit countLimit)</span> <span class="keyword">throws</span> Throwable &#123;</span><br><span class="line">    <span class="type">String</span> <span class="variable">key</span> <span class="operator">=</span> getKey(point, countLimit.limitType(), countLimit.key(), countLimit.prefix());</span><br><span class="line">    <span class="keyword">if</span> (!redisCountLimiter.tryAcquire(key, countLimit.limit(), countLimit.period())) &#123;</span><br><span class="line">        ExceptionUtil.rethrowClientSideException(LIMIT_MESSAGE);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+    </div>
+
+    
+    
+    
+
+	
+     <div>
+     <div>
+    
+        <div style="text-align:center; color:#ccc; font-size:16px;">-------------thanks-------------</div>
+    
+</div>
+     </div>
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>zayn
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/" title="常用限流算法及其实现">http://zyanprocess.github.io/2023/04/12/常用限流算法及其实现/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+        
+
+  <div class="followme">
+    <p>欢迎关注我的其它发布渠道</p>
+
+    <div class="social-list">
+
+        <div class="social-item">
+          <a target="_blank" class="social-link" href="/images/wechat_channel.jpg">
+            <span class="icon">
+              <i class="fab fa-weixin"></i>
+            </span>
+
+            <span class="label">WeChat</span>
+          </a>
+        </div>
+
+        <div class="social-item">
+          <a target="_blank" class="social-link" href="/atom.xml">
+            <span class="icon">
+              <i class="fa fa-rss"></i>
+            </span>
+
+            <span class="label">RSS</span>
+          </a>
+        </div>
+    </div>
+  </div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E9%99%90%E6%B5%81/" rel="tag"># 限流</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/04/10/Nginx/" rel="prev" title="Nginx">
+      <i class="fa fa-chevron-left"></i> Nginx
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/04/12/%E7%BA%BF%E7%A8%8B%E6%B1%A0%E5%A4%8D%E7%94%A8/" rel="next" title="线程池复用">
+      线程池复用 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+    
+  <div class="comments">
+    <div id="lv-container" data-id="city" data-uid="MTAyMC81ODI3MS8zNDczNA=="></div>
+  </div>
+  
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BB%A4%E7%89%8C%E6%A1%B6%E7%AE%97%E6%B3%95"><span class="nav-number">1.</span> <span class="nav-text">令牌桶算法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BC%8F%E6%A1%B6%E7%AE%97%E6%B3%95"><span class="nav-number">2.</span> <span class="nav-text">漏桶算法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%AE%A1%E6%95%B0%E5%99%A8%E7%AE%97%E6%B3%95"><span class="nav-number">3.</span> <span class="nav-text">计数器算法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Guava-RateLimiter%E8%A7%A3%E6%9E%90"><span class="nav-number">4.</span> <span class="nav-text">Guava RateLimiter解析</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%99%90%E9%80%9F%E6%8E%A7%E5%88%B6"><span class="nav-number">5.</span> <span class="nav-text">限速控制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A4%E7%89%8C%E6%A1%B6%E6%A8%A1%E5%9E%8B"><span class="nav-number">5.1.</span> <span class="nav-text">令牌桶模型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A4%E7%89%8C%E6%8E%A7%E5%88%B6%E7%B1%BB"><span class="nav-number">5.2.</span> <span class="nav-text">令牌控制类</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A4%E7%89%8C%E6%A1%B6%E6%8E%A7%E5%88%B6%E5%B7%A5%E5%8E%82%E7%B1%BB"><span class="nav-number">5.3.</span> <span class="nav-text">令牌桶控制工厂类</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B3%A8%E8%A7%A3%E6%94%AF%E6%8C%81"><span class="nav-number">5.4.</span> <span class="nav-text">注解支持</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%99%90%E9%87%8F%E6%8E%A7%E5%88%B6"><span class="nav-number">6.</span> <span class="nav-text">限量控制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%99%90%E9%87%8F%E6%8E%A7%E5%88%B6%E7%B1%BB"><span class="nav-number">6.1.</span> <span class="nav-text">限量控制类</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B3%A8%E8%A7%A3%E6%94%AF%E6%8C%81-1"><span class="nav-number">6.2.</span> <span class="nav-text">注解支持</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="zayn"
+      src="/images/avatar.jpg">
+  <p class="site-author-name" itemprop="name">zayn</p>
+  <div class="site-description" itemprop="description">从前追寻答案，现在相信过程</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">12</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">11</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zaynprocess" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zaynprocess" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+  <div class="links-of-blogroll motion-element">
+    <div class="links-of-blogroll-title"><i class="link fa-fw"></i>
+      链接网站
+    </div>
+    <ul class="links-of-blogroll-list">
+        <li class="links-of-blogroll-item">
+          <a href="https://baidu.com/" title="https:&#x2F;&#x2F;baidu.com" rel="noopener" target="_blank">百度</a>
+        </li>
+        <li class="links-of-blogroll-item">
+          <a href="https://www.bing.com/" title="https:&#x2F;&#x2F;www.bing.com" rel="noopener" target="_blank">Bing</a>
+        </li>
+        <li class="links-of-blogroll-item">
+          <a href="https://www.google.com/" title="https:&#x2F;&#x2F;www.google.com&#x2F;" rel="noopener" target="_blank">Google</a>
+        </li>
+    </ul>
+  </div>
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+<!---->
+<div class="copyright">
+  
+  &copy; 2022 – 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">zayn</span>
+
+  
+</div>
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,255' opacity='0.5' zIndex='-1' count='99' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+  <script defer src="/lib/three/three.min.js"></script>
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+<script>
+NexT.utils.loadComments(document.querySelector('#lv-container'), () => {
+  window.livereOptions = {
+    refer: location.pathname.replace(CONFIG.root, '').replace('index.html', '')
+  };
+  (function(d, s) {
+    var j, e = d.getElementsByTagName(s)[0];
+    if (typeof LivereTower === 'function') { return; }
+    j = d.createElement(s);
+    j.src = 'https://cdn-city.livere.com/js/embed.dist.js';
+    j.async = true;
+    e.parentNode.insertBefore(j, e);
+  })(document, 'script');
+});
+</script>
+
+</body>
+</html>
