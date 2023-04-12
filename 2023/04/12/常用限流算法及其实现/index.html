@@ -29,14 +29,14 @@
 <meta property="og:site_name" content="zaynの博客">
 <meta property="og:description" content="在分布式系统中，应对高并发访问时，缓存、限流、降级是保护系统正常运行的常用方法。当请求量突发暴涨时，如果不加以限制访问，则可能导致整个系统崩溃，服务不可用。同时有一些业务场景，比如短信验证码，或者其它第三方API调用，也需要提供必要的访问限制支持。 常见的限流算法有令牌桶算法，漏桶算法，与计数器算法。本文主要对三个算法的基本原理及Google Guava包中令牌桶算法的实现RateLimiter进">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
-<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-0736dde059726d7fb463c72afdc350e1_720w.png">
+<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0%5Cv2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
+<meta property="og:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0%5Cv2-0736dde059726d7fb463c72afdc350e1_720w.png">
 <meta property="article:published_time" content="2023-04-12T06:08:28.000Z">
-<meta property="article:modified_time" content="2023-04-12T07:56:42.486Z">
+<meta property="article:modified_time" content="2023-04-12T10:56:36.405Z">
 <meta property="article:author" content="zayn">
 <meta property="article:tag" content="限流">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace/Blog/source_posts/常用限流算法及其实现/v2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
+<meta name="twitter:image" content="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0%5Cv2-1118c1c9455d923d4b3c70291b689f7b_720w.png">
 
 <link rel="canonical" href="http://zyanprocess.github.io/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/">
 
@@ -230,7 +230,7 @@
               <span class="post-meta-item-text">发表于</span>
               
 
-              <time title="创建时间：2023-04-12 14:08:28 / 修改时间：15:56:42" itemprop="dateCreated datePublished" datetime="2023-04-12T14:08:28+08:00">2023-04-12</time>
+              <time title="创建时间：2023-04-12 14:08:28 / 修改时间：18:56:36" itemprop="dateCreated datePublished" datetime="2023-04-12T14:08:28+08:00">2023-04-12</time>
             </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -273,11 +273,11 @@
 
 <h1 id="令牌桶算法"><a href="#令牌桶算法" class="headerlink" title="令牌桶算法"></a>令牌桶算法</h1><p>令牌桶算法的原理就是以一个恒定的速度往桶里放入令牌，每一个请求的处理都需要从桶里先获取一个令牌，当桶里没有令牌时，则请求不会被处理，要么排队等待，要么降级处理，要么直接拒绝服务。当桶里令牌满时，新添加的令牌会被丢弃或拒绝。</p>
 <p>令牌桶算法的处理示意图如下</p>
-<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace\Blog\source_posts\常用限流算法及其实现\v2-1118c1c9455d923d4b3c70291b689f7b_720w.png"></p>
+<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0%5Cv2-1118c1c9455d923d4b3c70291b689f7b_720w.png"></p>
 <p>令牌桶算法主要是可以控制请求的平均处理速率，它允许预消费，即可以提前消费令牌，以应对突发请求，但是后面的请求需要为预消费买单（等待更长的时间），以满足请求处理的平均速率是一定的。</p>
 <h1 id="漏桶算法"><a href="#漏桶算法" class="headerlink" title="漏桶算法"></a>漏桶算法</h1><p>漏桶算法的原理是水（请求）先进入漏桶中，漏桶以一定的速度出水（处理请求），当水流入速度大于流出速度导致水在桶内逐渐堆积直到桶满时，水会溢出（请求被拒绝）。</p>
 <p>漏桶算法的处理示意图如下</p>
-<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/workSpace\Blog\source_posts\常用限流算法及其实现\v2-0736dde059726d7fb463c72afdc350e1_720w.png"></p>
+<p><img src="/2023/04/12/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0/%E5%B8%B8%E7%94%A8%E9%99%90%E6%B5%81%E7%AE%97%E6%B3%95%E5%8F%8A%E5%85%B6%E5%AE%9E%E7%8E%B0%5Cv2-0736dde059726d7fb463c72afdc350e1_720w.png"></p>
 <p>漏桶算法主要是控制请求的处理速率，平滑网络上的突发流量，请求可以以任意速度进入漏桶中，但请求的处理则以恒定的速度进行。</p>
 <h1 id="计数器算法"><a href="#计数器算法" class="headerlink" title="计数器算法"></a>计数器算法</h1><p>计数器算法是限流算法中最简单的一种算法，限制在一个时间窗口内，至多处理多少个请求。比如每分钟最多处理10个请求，则从第一个请求进来的时间为起点，60s的时间窗口内只允许最多处理10个请求。下一个时间窗口又以前一时间窗口过后第一个请求进来的时间为起点。常见的比如一分钟内只能获取一次短信验证码的功能可以通过计数器算法来实现。</p>
 <h1 id="Guava-RateLimiter解析"><a href="#Guava-RateLimiter解析" class="headerlink" title="Guava RateLimiter解析"></a>Guava RateLimiter解析</h1><p>Guava是Google开源的一个工具包，其中的<code>RateLimiter</code>是实现了令牌桶算法的一个限流工具类。在<code>pom.xml</code>中添加guava依赖，即可使用<code>RateLimiter</code></p>
